@@ -6,14 +6,27 @@ from matplotlib.animation import FuncAnimation
 from scipy.integrate import solve_ivp
 
 # Custom imports
+from environments import get_scenario
 from rrt_bridge import RRTStarBridge
 
 np.random.seed(42)
 
-# General Settings
-ROBOT_RADIUS = 0.35    
-GOAL_TOLERANCE = 0.05  
+# CONFIGURATION
+ROBOT_RADIUS = 0.35
+GOAL_TOLERANCE = 0.05 # Parking brake trigger radius
+V_MAX = 1.5 # Maximum speed
+T_MAX = 40.0 # Maximum simulation time
 
+# RRT* parameters
+RRT_MAX_ITER = 2500
+RRT_EXPAND_DIS = 0.5 # Branch segment length
+
+# Continuous Dynamics (ODE & APF)
+LOOKAHEAD_DIST = 0.8 # How far ahead on the global path the ODE's nominal point (P2) is placed
+APF_BASE_BUFFER = 0.05 # Minimum buffer around agents and walls at zero speed
+ODE_MAX_STEP = 0.1 # Maximum step size for the ODE solver (smaller = more accurate but slower)
+
+# ======================================================================================================================
 # Global Path Tracking Function
 def get_lookahead_target(pos, path, lookahead=1.0):
     closest_dist = float('inf')
@@ -70,16 +83,15 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
         if dist_to_final_goal <= GOAL_TOLERANCE:
             dstate_dt[i*3 : i*3 + 3] = [0.0, 0.0, -2.0 * W_i] 
             continue
-            
-        v_max = 1.5
+          
         arrival_radius = 0.2 
         if dist_to_final_goal < arrival_radius:
-            target_speed = max(0.1, v_max * (dist_to_final_goal / arrival_radius))
+            target_speed = max(0.1, V_MAX * (dist_to_final_goal / arrival_radius))
         else:
-            target_speed = v_max
+            target_speed = V_MAX
             
         P0 = p_i
-        P2 = get_lookahead_target(P0, agent.global_path, lookahead=0.8)
+        P2 = get_lookahead_target(P0, agent.global_path, lookahead=LOOKAHEAD_DIST)
         
         dir_to_P2 = P2 - P0
         dist_P2 = np.linalg.norm(dir_to_P2)
@@ -91,7 +103,7 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
         estimated_speed = target_speed * (1.0 - W_i)
         
         # Lowered base buffer to 5cm so they can squeeze tightly at low speeds
-        dynamic_buffer = 0.05 + (0.3 * estimated_speed) 
+        dynamic_buffer = APF_BASE_BUFFER + (0.3 * estimated_speed) 
         
         v_rep_agent = np.zeros(2)
         v_rep_wall = np.zeros(2)
@@ -112,7 +124,7 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
             dist_center_to_wall = np.linalg.norm(p_i - closest_pt)
             
             clear_dist_wall = dist_center_to_wall - ROBOT_RADIUS
-            wall_buffer = 0.05 + (0.2 * target_speed) 
+            wall_buffer = APF_BASE_BUFFER + (0.2 * target_speed) 
             
             if 0.001 < clear_dist_wall < wall_buffer:
                 rep_mag = 8.0 * ((1.0/clear_dist_wall - 1.0/wall_buffer)**3) * (1.0/(clear_dist_wall**2))
@@ -169,56 +181,15 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
 
 # ======================================================================================================================
 # SIMULATION SETUP & EXECUTION
-class DynamicAgent:
-    def __init__(self, id, start, goal, color):
-        self.id = id
-        self.pos = np.array(start, dtype=float)
-        self.goal = np.array(goal, dtype=float)
-        self.color = color
-        self.global_path = None
-        self.random_base_angle = np.random.uniform(0, 2*np.pi)
-
-        # Guarantee a minimum rotation speed of 1.5 rad/s to ensure the robot sweeps a full 360 degrees in ~4 seconds
-        sign = np.random.choice([-1, 1])
-        self.random_drift_rate = sign * np.random.uniform(1.5, 3.0)
-
 def run_continuous_simulation(scenario):
-    if scenario == "corridor":
-        obstacles = [
-            (4.8, 5.75, 0.4, 6.25), (4.8, -2.0, 0.4, 6.25),
-            (-2.0, 11.0, 14.0, 0.5), (-2.0, -1.5, 14.0, 0.5),
-            (-1.5, -1.5, 0.5, 13.0), (11.0, -1.5, 0.5, 13.0)
-        ]
-        agents = [
-            DynamicAgent(1, [0.0, 5.0], [10.0, 5.0], 'blue'),
-            DynamicAgent(2, [10.0, 5.0], [0.0, 5.0], 'red')
-        ]
-    elif scenario == "maze":
-        obstacles = [
-            (-2.0, 7.0, 14.0, 1.0), (-2.0, 2.0, 14.0, 1.0),
-            (3.0, 4.5, 1.0, 2.5), (6.0, 3.0, 1.5, 2.5),
-        ]
-        agents = [
-            DynamicAgent(1, [0.0, 5.0], [10.0, 5.0], 'blue'),
-            DynamicAgent(2, [10.0, 5.0], [0.0, 5.0], 'red')
-        ]
-    else: 
-        obstacles = [
-            (-2.0, -2.0, 6.0, 6.0), (-2.0, 6.0, 6.0, 6.0),
-            (6.0, -2.0, 6.0, 6.0), (6.0, 6.0, 6.0, 6.0),
-        ]
-        agents = [
-            DynamicAgent(1, [0.0, 5.0], [10.0, 5.0], 'blue'),
-            DynamicAgent(2, [10.0, 5.0], [0.0, 5.0], 'red'),
-            DynamicAgent(3, [5.0, 0.0], [5.0, 10.0], 'green'),
-            DynamicAgent(4, [5.0, 10.0], [5.0, 0.0], 'purple')
-        ]
-        
+    
+    agents, obstacles = get_scenario(scenario)
+     
     print(f"Computing Exact RRT* Paths for '{scenario.upper()}'...")
     rrt_obstacles = [(x - ROBOT_RADIUS, y - ROBOT_RADIUS, w + (2 * ROBOT_RADIUS), h + (2 * ROBOT_RADIUS)) for (x, y, w, h) in obstacles]
 
     for a in agents:
-        rrt = RRTStarBridge(a.pos, a.goal, rrt_obstacles, [-2, 12])
+        rrt = RRTStarBridge(a.pos, a.goal, rrt_obstacles, [-2, 12], expand_dis=RRT_EXPAND_DIS, max_iter=RRT_MAX_ITER)
         raw_path = rrt.plan()
         if raw_path is None: raw_path = np.array([a.pos, a.goal])
         a.global_path = raw_path
@@ -237,15 +208,14 @@ def run_continuous_simulation(scenario):
     termination_event.direction = -1
 
     print("Running True Continuous-Time ODE Solver (solve_ivp)...")
-    T_MAX = 40.0 
-    
+
     sol = solve_ivp(
         fun=lambda t, y: continuous_multi_agent_dynamics(t, y, agents, obstacles),
         t_span=(0, T_MAX),
         y0=initial_state,
         events=termination_event,
         dense_output=True, 
-        max_step=0.1 
+        max_step=ODE_MAX_STEP
     )
     
     print(f"ODE Solver finished at t = {sol.t[-1]:.2f} seconds.")
@@ -298,11 +268,11 @@ def run_continuous_simulation(scenario):
             W_i = y_frames[i*3+2][frame_idx]
             
             dist_to_goal = np.linalg.norm(np.array([hist_x[-1], hist_y[-1]]) - a.goal)
-            target_speed = max(0.1, 1.5 * (dist_to_goal / 0.2)) if dist_to_goal < 0.2 else 1.5
+            target_speed = max(0.1, V_MAX * (dist_to_goal / 0.2)) if dist_to_goal < 0.2 else V_MAX
             
             # Shrink the bubble when the ODE detects a deadlock
             estimated_speed = target_speed * (1.0 - W_i)
-            dynamic_buffer = 0.1 + (0.3 * estimated_speed)
+            dynamic_buffer = APF_BASE_BUFFER + (0.3 * estimated_speed)
             apf_bubbles[i].set_radius(ROBOT_RADIUS + dynamic_buffer)
 
         distances = []

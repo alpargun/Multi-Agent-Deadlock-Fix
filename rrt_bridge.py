@@ -21,14 +21,15 @@ class RRTStarBridge:
     rarely picks points inside small gaps. Bridge sampling actively hunts for narrow
     corridors by finding two obstacle points and checking if the space between them is free.
     """
-    def __init__(self, start, goal, obstacles, rand_area, expand_dis=0.5, goal_sample_rate=0.1, bridge_std=1.0):
+    def __init__(self, start, goal, obstacles, rand_area, expand_dis=0.5, goal_sample_rate=0.1, bridge_std=1.0, max_iter=1500):
         self.start = Node(start[0], start[1])
         self.goal = Node(goal[0], goal[1])
         self.min_rand, self.max_rand = rand_area
-        self.expand_dis = expand_dis             # How far to step toward a sampled point
+        self.expand_dis = expand_dis # How far to step toward a sampled point
         self.goal_sample_rate = goal_sample_rate # Bias to sample the goal directly
-        self.bridge_std = bridge_std             # Spread of the Gaussian used for the second bridge point
+        self.bridge_std = bridge_std # Spread of the Gaussian used for the second bridge point
         self.obstacles = obstacles
+        self.max_iter = max_iter # Maximum number of iterations for tree growth
         self.node_list = []
 
     def check_collision_point(self, x, y):
@@ -92,10 +93,10 @@ class RRTStarBridge:
             if not self.check_collision_point(x, y):
                 return Node(x, y)
 
-    def plan(self, max_iter=1500):
+    def plan(self):
         """Builds the tree and optimizes connections via RRT* rewiring."""
         self.node_list = [self.start]
-        for i in range(max_iter):
+        for i in range(self.max_iter):
             rnd = self.get_random_node()
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd)
             new_node = self.steer(self.node_list[nearest_ind], rnd, self.expand_dis)
