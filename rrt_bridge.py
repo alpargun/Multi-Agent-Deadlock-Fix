@@ -65,7 +65,7 @@ class RRTStarBridge:
         if random.random() < self.goal_sample_rate:
             return Node(self.goal.x, self.goal.y)
             
-        # Strategy 2: Bridge Sampling (Hunt for narrow passages)
+        # Strategy 2: Bridge Sampling (Search for narrow passages)
         if random.random() < 0.5: # 50% chance to attempt bridge sampling
             x1 = random.uniform(self.min_rand, self.max_rand)
             y1 = random.uniform(self.min_rand, self.max_rand)
