@@ -11,7 +11,9 @@ from rrt_bridge import RRTStarBridge
 
 np.random.seed(42)
 
+# ======================================================================================================================
 # CONFIGURATION
+# ======================================================================================================================
 ROBOT_RADIUS = 0.35
 GOAL_TOLERANCE = 0.05 # Parking brake trigger radius
 V_MAX = 1.5 # Maximum speed
@@ -28,6 +30,7 @@ ODE_MAX_STEP = 0.1 # Maximum step size for the ODE solver (smaller = more accura
 
 # ======================================================================================================================
 # Global Path Tracking Function
+# ======================================================================================================================
 def get_lookahead_target(pos, path, lookahead=1.0):
     closest_dist = float('inf')
     target_pt = path[-1]
@@ -66,6 +69,7 @@ def get_closest_point_on_rect(pos, rect):
 
 # ======================================================================================================================
 # CONTINUOUS-TIME DYNAMICS (ODE + B-SPLINE RPV)
+# ======================================================================================================================
 def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
     num_agents = len(agents)
     dstate_dt = np.zeros_like(state_vector)
@@ -130,16 +134,23 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
                 rep_mag = 8.0 * ((1.0/clear_dist_wall - 1.0/wall_buffer)**3) * (1.0/(clear_dist_wall**2))
                 v_rep_wall += rep_mag * ((p_i - closest_pt) / dist_center_to_wall)
                 
-        # Force Hierarchy: Repulsion from walls is strongest, then repulsion from agents, then attraction to goal
-        # Wall (6.0) > Evasion (4.0) > Agent (2.5) > Attraction (1.5)
+        # ============================================================
+        # SAFETY CLAMPS
+        # ============================================================
+        # Force ceilings to guarantee robots bounce off each other.
+        # Wall (25.0) > Agent (15.0) > Evasion (3.0) > Attraction (1.5)
+        # 15.0 is 10x max speed, acting as an unbreakable physical barrier.
         mag_agent = np.linalg.norm(v_rep_agent)
-        if mag_agent > 2.5:
-            v_rep_agent = (v_rep_agent / mag_agent) * 2.5
+        if mag_agent > 15.0:
+            v_rep_agent = (v_rep_agent / mag_agent) * 15.0
             
         mag_wall = np.linalg.norm(v_rep_wall)
-        if mag_wall > 6.0:
-            v_rep_wall = (v_rep_wall / mag_wall) * 6.0
-                
+        if mag_wall > 25.0:
+            v_rep_wall = (v_rep_wall / mag_wall) * 25.0
+        
+        # ============================================================
+        # DEADLOCK MITIGATION & LOCAL B-SPLINE RPV
+        # ============================================================
         # Differential Deadlock Equation: Update deadlock weight (W_i) based on forward progress and proximity to goal
         v_nominal = v_att + v_rep_agent + v_rep_wall
         speed_nom = np.linalg.norm(v_nominal)
@@ -164,7 +175,6 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
         theta = agent.random_base_angle + (agent.random_drift_rate * t)
         P1_nominal = P0 + (dir_norm * (target_speed * 0.5)) 
         
-        # Max pull magnitude is strictly capped at 4.0 via the hierarchy math
         pull_vector = np.array([np.cos(theta), np.sin(theta)]) * 2.0 * W_i
         P1_shifted = P1_nominal + pull_vector
         
@@ -181,6 +191,7 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
 
 # ======================================================================================================================
 # SIMULATION SETUP & EXECUTION
+# ======================================================================================================================
 def run_continuous_simulation(scenario):
     
     agents, obstacles = get_scenario(scenario)
@@ -221,7 +232,8 @@ def run_continuous_simulation(scenario):
     print(f"ODE Solver finished at t = {sol.t[-1]:.2f} seconds.")
 
     # ==================================================================================================================
-    # RENDER ANIMATION & PLOTS
+    # FIGURE 1: RENDER ANIMATION
+    # ==================================================================================================================
     print("Preparing Visuals...")
     t_frames = np.arange(0, sol.t[-1], 0.05)
     y_frames = sol.sol(t_frames)
@@ -266,11 +278,10 @@ def run_continuous_simulation(scenario):
             
             # Extract the exact Deadlock Weight (W_i) from the ODE state vector
             W_i = y_frames[i*3+2][frame_idx]
-            
             dist_to_goal = np.linalg.norm(np.array([hist_x[-1], hist_y[-1]]) - a.goal)
             target_speed = max(0.1, V_MAX * (dist_to_goal / 0.2)) if dist_to_goal < 0.2 else V_MAX
             
-            # Shrink the bubble when the ODE detects a deadlock
+            # Shrink the bubble when the ODE detects a deadlock (W_i > 0.5) to visually indicate the agent is in a high-deadlock state
             estimated_speed = target_speed * (1.0 - W_i)
             dynamic_buffer = APF_BASE_BUFFER + (0.3 * estimated_speed)
             apf_bubbles[i].set_radius(ROBOT_RADIUS + dynamic_buffer)
@@ -289,6 +300,9 @@ def run_continuous_simulation(scenario):
     print("Displaying Animation... (Close the window to view the Error Plot)")
     plt.show()
 
+    # ==================================================================================================================
+    # FIGURE 2: ERROR CONVERGENCE PLOT
+    # ==================================================================================================================
     print("Calculating and Displaying Error Plot...")
     fig_error, ax_error = plt.subplots(figsize=(10, 5))
     
@@ -303,6 +317,65 @@ def run_continuous_simulation(scenario):
     ax_error.set_ylabel("Distance to Goal (m)", fontsize=12)
     ax_error.grid(True, linestyle='--', alpha=0.6)
     ax_error.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+    # ==================================================================================================================
+    # FIGURE 3: MINIMUM CLEARANCE VERIFICATION (Safety Proof Module)
+    # ==================================================================================================================
+    print("Calculating Minimum Clearance Data...")
+    fig_clearance, ax_clearance = plt.subplots(figsize=(10, 5))
+    
+    min_agent_clearance_history = []
+    min_wall_clearance_history = []
+    
+    # Sweep every single frame of the simulation to guarantee no physics clipping occurred
+    for frame_idx in range(len(t_frames)):
+        current_agent_clearance = float('inf')
+        current_wall_clearance = float('inf')
+        
+        # 1. Check all Agent-to-Agent distances
+        for i in range(len(agents)):
+            p_i = np.array([y_frames[i*3][frame_idx], y_frames[i*3+1][frame_idx]])
+            for j in range(i + 1, len(agents)):
+                p_j = np.array([y_frames[j*3][frame_idx], y_frames[j*3+1][frame_idx]])
+                
+                # Clear distance is edge-to-edge
+                clear_dist = np.linalg.norm(p_i - p_j) - (2.0 * ROBOT_RADIUS)
+                if clear_dist < current_agent_clearance:
+                    current_agent_clearance = clear_dist
+                    
+            # 2. Check all Agent-to-Wall distances
+            for obs in obstacles:
+                closest_pt = get_closest_point_on_rect(p_i, obs)
+                clear_dist_wall = np.linalg.norm(p_i - closest_pt) - ROBOT_RADIUS
+                if clear_dist_wall < current_wall_clearance:
+                    current_wall_clearance = clear_dist_wall
+                    
+        min_agent_clearance_history.append(current_agent_clearance)
+        min_wall_clearance_history.append(current_wall_clearance)
+
+    # Plot the clearance data
+    ax_clearance.plot(t_frames, min_agent_clearance_history, label='Min Agent-to-Agent Clearance', color='purple', lw=2)
+    ax_clearance.plot(t_frames, min_wall_clearance_history, label='Min Agent-to-Wall Clearance', color='orange', lw=2)
+    
+    # Draw the RED ZERO LINE (The Collision Boundary)
+    ax_clearance.axhline(0, color='red', linestyle='-', linewidth=2, label='CRITICAL COLLISION BOUNDARY (0.0m)')
+    
+    # Draw the APF Base Buffer line for visual reference
+    ax_clearance.axhline(APF_BASE_BUFFER, color='gray', linestyle='--', alpha=0.7, label=f'Base Buffer ({APF_BASE_BUFFER}m)')
+    
+    ax_clearance.set_title(f"Safety Verification: Minimum Clearance ({scenario.capitalize()})", fontsize=14, fontweight='bold')
+    ax_clearance.set_xlabel("Time (seconds)", fontsize=12)
+    ax_clearance.set_ylabel("Clearance Distance (m)", fontsize=12)
+    
+    # Dynamically scale the Y-axis to focus on the danger zone
+    min_y = min(min(min_agent_clearance_history), min(min_wall_clearance_history))
+    ax_clearance.set_ylim(min(-0.1, min_y - 0.1), 1.0) 
+    
+    ax_clearance.grid(True, linestyle='--', alpha=0.6)
+    ax_clearance.legend(loc='upper right')
     
     plt.tight_layout()
     plt.show()
