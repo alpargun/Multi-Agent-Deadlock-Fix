@@ -171,9 +171,17 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
             else:
                 dW_dt = 3.0 * (W_target - W_i)   
             
-        # Local B-Spline RPV Pull: Adds a dynamic swirling motion to help escape local minima and deadlocks
+        # ============================================================
+        # B-SPLINE with 2 parameters: Theta for swirling motion, Lambda for dynamic stretch
+        # ============================================================
+        # Parameter 1: Theta adds the dynamic swirling motion
         theta = agent.random_base_angle + (agent.random_drift_rate * t)
-        P1_nominal = P0 + (dir_norm * (target_speed * 0.5)) 
+        
+        # Parameter 2: Lambda oscillates the anchor point smoothly between 0.2 and 0.8
+        lambda_t = 0.5 + 0.3 * np.sin(agent.random_stretch_freq * t + agent.random_stretch_phase)
+        
+        # Applying both parameters to shape the final evasion tangent
+        P1_nominal = P0 + (dir_norm * (target_speed * lambda_t)) 
         
         pull_vector = np.array([np.cos(theta), np.sin(theta)]) * 2.0 * W_i
         P1_shifted = P1_nominal + pull_vector
@@ -195,6 +203,11 @@ def continuous_multi_agent_dynamics(t, state_vector, agents, obstacles):
 def run_continuous_simulation(scenario):
     
     agents, obstacles = get_scenario(scenario)
+    
+    # Inject the continuous oscillator parameters for the B-Spline lambda(t) stretch
+    for a in agents:
+        a.random_stretch_freq = np.random.uniform(0.5, 1.5)
+        a.random_stretch_phase = np.random.uniform(0, 2*np.pi)
      
     print(f"Computing Exact RRT* Paths for '{scenario.upper()}'...")
     rrt_obstacles = [(x - ROBOT_RADIUS, y - ROBOT_RADIUS, w + (2 * ROBOT_RADIUS), h + (2 * ROBOT_RADIUS)) for (x, y, w, h) in obstacles]
@@ -278,6 +291,7 @@ def run_continuous_simulation(scenario):
             
             # Extract the exact Deadlock Weight (W_i) from the ODE state vector
             W_i = y_frames[i*3+2][frame_idx]
+            
             dist_to_goal = np.linalg.norm(np.array([hist_x[-1], hist_y[-1]]) - a.goal)
             target_speed = max(0.1, V_MAX * (dist_to_goal / 0.2)) if dist_to_goal < 0.2 else V_MAX
             
