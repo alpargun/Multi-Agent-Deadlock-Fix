@@ -11,28 +11,55 @@ This repository implements a completely decentralized, continuous-time navigatio
 
 ### 1. Corridor Scenario
 
-**Agent Performance:**
-<video src="https://github.com/YOUR_USERNAME/YOUR_REPO/assets/corridor_animation.mp4" controls="controls" width="100%"></video>
-
-**Distance to Goal Convergence:**
-![Corridor Distance Plot](output-continuous/distance_error_plot_corridor.png)
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/5264ddad-0bca-4c8a-8f90-8400159e7348" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_corridor.png" width="100%">
+    </td>
+  </tr>
+</table>
 
 ---
 
 ### 2. Maze Scenario
 
-**Agent Performance:**
-<video src="https://github.com/YOUR_USERNAME/YOUR_REPO/assets/maze_animation.mp4" controls="controls" width="100%"></video>
-
-**Distance to Goal Convergence:**
-![Maze Distance Plot](output-continuous/distance_error_plot_maze.png)
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/37dae583-a294-4cd3-967f-e6c6d4f01d88" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_maze.png" width="100%">
+    </td>
+  </tr>
+</table>
 
 ---
 
 ### 3. Intersection Scenario
 
-**Agent Performance:**
-<video src="https://github.com/YOUR_USERNAME/YOUR_REPO/assets/intersection_animation.mp4" controls="controls" width="100%"></video>
-
-**Distance to Goal Convergence:**
-![Intersection Distance Plot](output-continuous/distance_error_plot_intersection.png)
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/e5a9f370-6d5d-430d-a7db-cd1eb3ed51c7" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_intersection.png" width="100%">
+    </td>
+  </tr>
+</table>
