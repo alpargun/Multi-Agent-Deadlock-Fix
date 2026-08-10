@@ -21,14 +21,15 @@ class RRTStarBridge:
     rarely picks points inside small gaps. Bridge sampling actively hunts for narrow
     corridors by finding two obstacle points and checking if the space between them is free.
     """
-    def __init__(self, start, goal, obstacles, rand_area, expand_dis=0.5, goal_sample_rate=0.1, bridge_std=1.0):
+    def __init__(self, start, goal, obstacles, rand_area, expand_dis=0.5, goal_sample_rate=0.1, bridge_std=1.0, max_iter=1500):
         self.start = Node(start[0], start[1])
         self.goal = Node(goal[0], goal[1])
         self.min_rand, self.max_rand = rand_area
-        self.expand_dis = expand_dis             # How far to step toward a sampled point
+        self.expand_dis = expand_dis # How far to step toward a sampled point
         self.goal_sample_rate = goal_sample_rate # Bias to sample the goal directly
-        self.bridge_std = bridge_std             # Spread of the Gaussian used for the second bridge point
+        self.bridge_std = bridge_std # Spread of the Gaussian used for the second bridge point
         self.obstacles = obstacles
+        self.max_iter = max_iter # Maximum number of iterations for tree growth
         self.node_list = []
 
     def check_collision_point(self, x, y):
@@ -42,6 +43,20 @@ class RRTStarBridge:
                 return True # Collision (Point is inside obstacle)
         return False # Safe (Point is in free space)
 
+    def check_collision_edge(self, node1, node2):
+        """
+        Samples points along the line segment between two nodes to ensure 
+        the branch does not cut through or jump over an obstacle.
+        """
+        steps = 10 # Check 10 points along the line
+        for i in range(steps + 1):
+            t = i / float(steps)
+            x = node1.x + t * (node2.x - node1.x)
+            y = node1.y + t * (node2.y - node1.y)
+            if self.check_collision_point(x, y):
+                return True # Edge hit a wall!
+        return False # Edge is safe
+
     def get_random_node(self):
         """
         Generates a new target point for the tree to grow towards.
@@ -51,7 +66,7 @@ class RRTStarBridge:
         if random.random() < self.goal_sample_rate:
             return Node(self.goal.x, self.goal.y)
             
-        # Strategy 2: Bridge Sampling (Hunt for narrow passages)
+        # Strategy 2: Bridge Sampling (Search for narrow passages)
         if random.random() < 0.5: # 50% chance to attempt bridge sampling
             x1 = random.uniform(self.min_rand, self.max_rand)
             y1 = random.uniform(self.min_rand, self.max_rand)
@@ -78,15 +93,16 @@ class RRTStarBridge:
             if not self.check_collision_point(x, y):
                 return Node(x, y)
 
-    def plan(self, max_iter=1500):
+    def plan(self):
         """Builds the tree and optimizes connections via RRT* rewiring."""
         self.node_list = [self.start]
-        for i in range(max_iter):
+        for i in range(self.max_iter):
             rnd = self.get_random_node()
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd)
             new_node = self.steer(self.node_list[nearest_ind], rnd, self.expand_dis)
             
-            if not self.check_collision_point(new_node.x, new_node.y):
+            # Ensure the very first branch growth doesn't cut through a wall
+            if not self.check_collision_edge(self.node_list[nearest_ind], new_node):
                 near_inds = self.find_near_nodes(new_node)
                 new_node = self.choose_parent(new_node, near_inds)
                 
@@ -129,7 +145,8 @@ class RRTStarBridge:
         for i in near_inds:
             n = self.node_list[i]
             t_node = self.steer(n, new_node)
-            if t_node and not self.check_collision_point(t_node.x, t_node.y):
+            # Check the entire edge, not just the endpoint
+            if t_node and not self.check_collision_edge(n, t_node):
                 costs.append(n.cost + math.hypot(n.x - new_node.x, n.y - new_node.y))
             else:
                 costs.append(float("inf"))
@@ -149,7 +166,8 @@ class RRTStarBridge:
             if not edge_node: continue
             
             edge_node.cost = new_node.cost + math.hypot(new_node.x - near_node.x, new_node.y - near_node.y)
-            if near_node.cost > edge_node.cost and not self.check_collision_point(edge_node.x, edge_node.y):
+            # Check the entire edge when rewiring
+            if near_node.cost > edge_node.cost and not self.check_collision_edge(new_node, near_node):
                 near_node.parent = new_node
                 near_node.cost = edge_node.cost
 

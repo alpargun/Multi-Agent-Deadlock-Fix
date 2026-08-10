@@ -1,63 +1,65 @@
-# Multi-Agent Deadlock Fix
+# Decentralized Multi-Agent Path Planning with Continuous-Time ODEs
 
-## Overview
+This repository implements a completely decentralized, continuous-time navigation architecture for multi-agent systems. It guarantees mathematically collision-free aggregation without relying on inter-agent communication or discrete state-machine switching.
 
-This project demonstrates and compares multi-agent navigation behavior in constrained maps,
-with a focus on deadlock formation and deadlock resolution.
+## How It Works
 
-Core pipeline:
+* **Global Planning (RRT*):** Each agent computes an optimal, obstacle-free baseline path using an RRT* planner enhanced with Bridge Sampling to efficiently navigate narrow passages.
+* **Local Planning & Deadlock Resolution (B-Splines & APF):** Agents track their global paths using a continuous Ordinary Differential Equation (ODE). The system utilizes Kinematic Artificial Potential Fields (APF) with velocity-scaled uncertainty bubbles to guarantee safety. When a symmetric deadlock is detected (e.g., agents meeting head-on), the system deterministically injects a 2-parameter continuous B-Spline perturbation. This smoothly breaks the deadlock and guarantees an asymptotic return to the optimal path once cleared.
 
-1. A global path is generated with sampling-based planning (RRT variants).
-2. The path is smoothed and followed using B-Splines.
-3. Artificial Potential Fields and Randomized Pushback Velocities are used to guarantee collision-free deadlock resolutions
-4. 3 maps are included to demonstrate deadlock resolutions.
-5. Simulations are animated and saved for visual analysis.
+## Showcase and Performance
 
-## Usage
+### 1. Corridor Scenario
 
-Preferred Python environment: `3.13`
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/5264ddad-0bca-4c8a-8f90-8400159e7348" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_corridor.png" width="100%">
+    </td>
+  </tr>
+</table>
 
-Install dependencies (`uv` is recommended):
+---
 
-`uv pip sync requirements.txt`
+### 2. Maze Scenario
 
-Run scenarios:
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/37dae583-a294-4cd3-967f-e6c6d4f01d88" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_maze.png" width="100%">
+    </td>
+  </tr>
+</table>
 
-`python narrow_corridor.py`
+---
 
-`python 4agents.py`
+### 3. Intersection Scenario
 
-`python maze.py`
-
-Optional baseline deadlock demo:
-
-`python baseline_deadlock_demo.py`
-
-## Project Structure
-
-```text
-multiAgentDeadlockFix/
-├── narrow_corridor.py
-├── 4agents.py
-├── maze.py
-├── baseline_deadlock_demo.py
-├── rrt_bridge.py
-├── tube_bspline_short.py
-├── plot_maps.py
-├── requirements.txt
-├── README.md
-└── output/
-	├── deadlock/
-	└── maps/
-```
-
-### File Guide
-
-- `narrow_corridor.py`: Two-agent corridor scenario using hybrid APF + global path planning.
-- `4agents.py`: Four-agent intersection stress test for multi-agent coordination and deadlock handling.
-- `maze.py`: Chicane/maze-style scenario for narrow passage interactions.
-- `baseline_deadlock_demo.py`: Baseline APF behavior with symmetry preserved to intentionally show deadlock.
-- `rrt_bridge.py`: RRT* + bridge sampling global planner for narrow-passage path generation.
-- `tube_bspline_short.py`: Local short-horizon B-spline tube planner with obstacle-aware constraints.
-- `plot_maps.py`: Utility script to render and save static map layouts.
-- `output/`: Generated simulation outputs (videos/plots).
+<table>
+  <tr>
+    <th width="48%">Agent Performance</th>
+    <th width="52%">Distance to Goal Convergence</th>
+  </tr>
+  <tr>
+    <td valign="middle" align="center">
+      <video src="https://github.com/user-attachments/assets/e5a9f370-6d5d-430d-a7db-cd1eb3ed51c7" controls="controls" width="100%"></video>
+    </td>
+    <td valign="middle" align="center">
+      <img src="output-continuous/distance_error_plot_intersection.png" width="100%">
+    </td>
+  </tr>
+</table>

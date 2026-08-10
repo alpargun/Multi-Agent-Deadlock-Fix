@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 from matplotlib.animation import FuncAnimation
 
 from rrt_bridge import RRTStarBridge
-from tube_bspline_short import TubeBSplineShort
+from old.tube_bspline_short import TubeBSplineShort
 
 np.random.seed(42)  # For reproducibility of random elements in the simulation
 
@@ -162,14 +162,19 @@ class TwoModeAPF:
             # TRIGGER CHAOS: If forward progress drops below tolerance, we are trapped.
             if theoretical_forward_progress < self.deadlock_tol:
                 agent.mode = 2
-                agent.rand_angle = np.random.uniform(0, 2 * np.pi) 
+                
+                # --- EFFICIENT FIX: PERSISTENT SPIN ---
+                # Decide ONCE to slide either Left (-1) or Right (+1)
+                agent.chaos_spin = np.random.choice([-1, 1])
+                
+                # Point the retreat vector generally backwards, biased by the spin
+                goal_angle = np.arctan2(dir_target_norm[1], dir_target_norm[0])
+                agent.rand_angle = goal_angle + np.pi + (agent.chaos_spin * np.pi/4)
                 
         elif agent.mode == 2:
             # BULLETPROOF HYSTERESIS
-            # Max possible progress is 1.5. We demand > 1.4 to exit Chaos.
-            # The agent MUST bounce until it is completely clear of the obstacle's
-            # repulsive forcefield to prevent rapid ping-ponging at corners.
-            if theoretical_forward_progress > 1.4:
+            # Max possible progress is 1.5. We demand > 0.8 to exit Chaos.
+            if theoretical_forward_progress > 0.8:
                 agent.mode = 1
 
         # ---------------------------------------------------------
@@ -181,12 +186,21 @@ class TwoModeAPF:
             # Mode 1 (Stable): Standard APF Gradient Tracking
             v_final = v_att + v_rep
         else:
-            # Mode 2 (Chaos): Stochastic Symmetry Breaking
-            # Injects random directional velocity while maintaining wall repulsion safety
-            agent.rand_angle += np.random.uniform(-0.5, 0.5)
-            rand_mag = np.random.uniform(2.0, 4.0) 
+            # --- EFFICIENT FIX: PERSISTENT DEFLECTION ---
+            # Instead of random jitter every frame, we rotate the massive wall 
+            # repulsion vector by a constant ~30 degrees (pi/6) based on our chosen spin.
+            # This creates a deterministic, smooth slide tangentially along the obstacle!
+            deflection_angle = agent.chaos_spin * (np.pi / 6) 
+            c, s = np.cos(deflection_angle), np.sin(deflection_angle)
+            v_rep_deflected = np.array([v_rep[0]*c - v_rep[1]*s, v_rep[0]*s + v_rep[1]*c])
+            
+            # Smoothly turn the driving wheel instead of vibrating it
+            agent.rand_angle += agent.chaos_spin * 0.1
+            rand_mag = 3.0 # Use a consistent driving force
             v_rand = np.array([np.cos(agent.rand_angle), np.sin(agent.rand_angle)]) * rand_mag
-            v_final = v_rand + v_rep
+            
+            # Combine the driving force with the newly deflected sliding force
+            v_final = v_rand + v_rep_deflected
             
         # Ensure we never exceed our dynamically damped target speed limit
         speed = np.linalg.norm(v_final)
@@ -211,6 +225,7 @@ class DynamicAgent:
         self.mode = 1           
         self.rand_angle = 0.0 
         self.mode_history = [self.mode] 
+        self.chaos_spin = 1  # NEW: Tracks persistent slide direction (+1 or -1)
 
 def get_current_target(agent):
     """
@@ -228,19 +243,19 @@ def get_current_target(agent):
     return agent.global_path[target_idx]
 
 def run_simulation():
-    # THE STRESS TEST: 1.5m Corridor
+    # THE STRESS TEST: The Narrow Chicane (S-Curve)
     obstacles = [
-        (4.8, 5.75, 0.4, 6.25),   # Top wall pulled down
-        (4.8, -2.0, 0.4, 6.25),   # Bottom wall pulled up
-        (-2.0, 11.0, 14.0, 0.5),  
-        (-2.0, -1.5, 14.0, 0.5),  
-        (-1.5, -1.5, 0.5, 13.0),  
-        (11.0, -1.5, 0.5, 13.0)   
+        (-2.0, 7.0, 14.0, 1.0),   # Top boundary
+        (-2.0, 2.0, 14.0, 1.0),   # Bottom boundary
+        (3.0, 4.5, 1.5, 2.5),     # Top baffle coming down
+        (6.0, 3.0, 1.5, 2.5),     # Bottom baffle coming up
     ]
     
-    a1 = DynamicAgent(1, [0.0, 5.0], [10.0, 5.0], 'blue')
-    a2 = DynamicAgent(2, [10.0, 5.0], [0.0, 5.0], 'red')
-    agents = [a1, a2]
+    # 2 Agents navigating the maze
+    agents = [
+        DynamicAgent(1, [0.0, 5.0], [10.0, 5.0], 'blue'),
+        DynamicAgent(2, [10.0, 5.0], [0.0, 5.0], 'red')
+    ]
     
     print("Computing Initial RRT* Bridge Paths...")
 
@@ -317,7 +332,7 @@ def run_simulation():
     fig, ax = plt.subplots(figsize=(8, 8)) 
     
     # Draw physical obstacles
-    for (ox, oy, w, h) in obstacles[:2]:
+    for (ox, oy, w, h) in obstacles:
         ax.add_patch(patches.Rectangle((ox, oy), w, h, color='black', alpha=0.8))
         
     # Draw paths and target stars
@@ -361,7 +376,7 @@ def run_simulation():
     max_frames = max(len(a.history) for a in agents)
     ani = FuncAnimation(fig, update, frames=max_frames, blit=False, interval=100, repeat=False)
     # Save the animation as mp4
-    ani.save('output/narrow_corridor_simulation.mp4', writer='ffmpeg', fps=20)
+    ani.save('output/maze_simulation.mp4', writer='ffmpeg', fps=20)
     plt.show()
 
     # ---------------------------------------------------------
@@ -382,7 +397,7 @@ def run_simulation():
     ax_error.legend()
     
     plt.tight_layout()
-    plt.savefig('output/distance_error_plot_narrow_corridor.png', dpi=300)
+    plt.savefig('output/distance_error_plot_maze.png', dpi=300)
     # ---------------------------------------------------------
 
     plt.show()

@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 from matplotlib.animation import FuncAnimation
 
 from rrt_bridge import RRTStarBridge
-from tube_bspline_short import TubeBSplineShort
+from old.tube_bspline_short import TubeBSplineShort
 
 np.random.seed(42)  # For reproducibility of random elements in the simulation
 
