@@ -1,4 +1,4 @@
-# Decentralized Multi-Agent Path Planning with Continuous-Time ODEs
+# Decentralized Deadlock-Free Multi-Agent Path Planning via Continuous-Time ODEs
 
 This repository implements a completely decentralized, continuous-time navigation architecture for multi-agent systems. It guarantees mathematically collision-free aggregation without relying on inter-agent communication or discrete state-machine switching.
 
